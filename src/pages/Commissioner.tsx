@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { adminCheck, adminSetSwap, type League } from '../lib/api';
 import { FLIGHTS, FLIGHT_LABELS, type Flight, type SwapKind } from '../lib/scoring';
+import SeasonSetup from './SeasonSetup';
 
-export default function Commissioner({ league, onChange }: { league: League; onChange: () => void }) {
+export default function Commissioner({ league, onChange }: { league: League; onChange: () => Promise<void> | void }) {
   // The commissioner PIN is kept in memory only, never saved in the browser.
   const [pin, setPin] = useState('');
   const [ok, setOk] = useState(false);
@@ -12,6 +13,7 @@ export default function Commissioner({ league, onChange }: { league: League; onC
   const [tid, setTid] = useState<number | ''>('');
   const [flight, setFlight] = useState<Flight>('SUPER');
   const [kind, setKind] = useState<SwapKind | 'none'>('week');
+  const [view, setView] = useState<'swaps' | 'setup'>('swaps');
 
   const login = async () => {
     setError('');
@@ -49,6 +51,12 @@ export default function Commissioner({ league, onChange }: { league: League; onC
   };
 
   return (
+    <>
+    <div className="row" style={{ marginBottom: 16 }}>
+      <button className={`btn ${view === 'swaps' ? '' : 'ghost'}`} onClick={() => setView('swaps')}>Swaps</button>
+      <button className={`btn ${view === 'setup' ? '' : 'ghost'}`} onClick={() => setView('setup')}>Season setup</button>
+    </div>
+    {view === 'setup' ? <SeasonSetup pin={pin} league={league} onChange={onChange} /> : (
     <div className="card">
       <h2>Swap for an owner</h2>
       <p className="muted small">For when someone texts or emails you a swap. This works even after the lock, so you can fix mistakes.</p>
@@ -74,5 +82,7 @@ export default function Commissioner({ league, onChange }: { league: League; onC
       {msg && <div className="ok">{msg}</div>}
       {error && <div className="error">{error}</div>}
     </div>
+    )}
+    </>
   );
 }

@@ -81,3 +81,23 @@ export const setMySwap = (name: string, pin: string, tournamentId: number, fligh
 export const adminCheck = (pin: string) => rpc<boolean>('admin_check', { p_pin: pin });
 export const adminSetSwap = (pin: string, owner: string, tournamentId: number, flight: Flight, kind: SwapKind | null) =>
   rpc('admin_set_swap', { p_pin: pin, p_owner: owner, p_tournament: tournamentId, p_flight: flight, p_kind: kind });
+
+// ---- season setup (commissioner) ----
+export interface AdminOwner { name: string; email: string | null; paid: boolean }
+export const adminGetOwners = (pin: string) => rpc<AdminOwner[]>('admin_get_owners', { p_pin: pin });
+export const adminUpsertOwner = (pin: string, name: string, newPin: string, email: string | null, paid: boolean) =>
+  rpc('admin_upsert_owner', { p_pin: pin, p_name: name, p_new_pin: newPin, p_email: email, p_paid: paid });
+export const adminRemoveOwner = (pin: string, name: string) => rpc('admin_remove_owner', { p_pin: pin, p_name: name });
+export const adminSetGolfers = (pin: string, rows: { name: string; flight: Flight }[]) =>
+  rpc<{ rows: number }>('admin_set_golfers', { p_pin: pin, p_rows: rows });
+export const adminSetRosterSlot = (pin: string, owner: string, flight: Flight, starter: string, alternate: string) =>
+  rpc('admin_set_roster_slot', { p_pin: pin, p_owner: owner, p_flight: flight, p_starter: starter, p_alternate: alternate });
+export const adminUpsertTournament = (
+  pin: string,
+  t: { id: number; name: string; start: string; lockAt: string; purse: number | null; fieldUrl: string | null },
+) =>
+  rpc('admin_upsert_tournament', {
+    p_pin: pin, p_id: t.id, p_name: t.name, p_start: t.start, p_lock_at: t.lockAt,
+    p_purse: t.purse, p_field_url: t.fieldUrl, p_espn_event_id: null,
+  });
+export const adminRemoveTournament = (pin: string, id: number) => rpc('admin_remove_tournament', { p_pin: pin, p_id: id });
