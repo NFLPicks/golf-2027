@@ -8,7 +8,9 @@
 --   * PINs are stored hashed (bcrypt via pgcrypto), never in plain text.
 --   * Swaps are locked on the server at the tournament's first tee time.
 
-create extension if not exists pgcrypto;
+-- Supabase installs pgcrypto in the "extensions" schema, so functions search public + extensions.
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
 
 -- ---------- tables ----------
 
@@ -117,13 +119,13 @@ end $$;
 -- ---------- helpers ----------
 
 create or replace function _current_season() returns int
-language sql stable security definer set search_path = public as $$
+language sql stable security definer set search_path = public, extensions as $$
   select id from season where is_current limit 1
 $$;
 
 -- Throttle: after 5 failures, wait 5 minutes.
 create or replace function _check_throttle(p_who text) returns void
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare r auth_throttle;
 begin
   select * into r from auth_throttle where who = p_who;
@@ -133,7 +135,7 @@ begin
 end $$;
 
 create or replace function _note_failure(p_who text) returns void
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 begin
   insert into auth_throttle(who, failures, last_fail) values (p_who, 1, now())
   on conflict (who) do update set
@@ -142,7 +144,7 @@ begin
 end $$;
 
 create or replace function _auth_owner(p_name text, p_pin text) returns bigint
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare o owner;
 begin
   perform _check_throttle('owner:' || lower(p_name));
@@ -157,7 +159,7 @@ begin
 end $$;
 
 create or replace function _auth_admin(p_pin text) returns boolean
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare h text;
 begin
   perform _check_throttle('admin');
@@ -175,7 +177,7 @@ end $$;
 -- so the math lives in one tested place.
 
 create or replace function get_league() returns jsonb
-language sql stable security definer set search_path = public as $$
+language sql stable security definer set search_path = public, extensions as $$
   with s as (select _current_season() as id)
   select jsonb_build_object(
     'season',      (select to_jsonb(x) from season x, s where x.id = s.id),
@@ -197,7 +199,7 @@ $$;
 -- ---------- owner functions ----------
 
 create or replace function owner_login(p_name text, p_pin text) returns jsonb
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare oid bigint;
 begin
   oid := _auth_owner(p_name, p_pin);
@@ -207,7 +209,7 @@ end $$;
 
 -- The owner's own swaps, including ones for tournaments that haven't locked yet.
 create or replace function get_my_swaps(p_name text, p_pin text) returns jsonb
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare oid bigint;
 begin
   oid := _auth_owner(p_name, p_pin);
@@ -218,7 +220,7 @@ end $$;
 
 -- Make or change a swap for the next tournament. p_kind null removes it.
 create or replace function set_my_swap(p_name text, p_pin text, p_tournament int, p_flight text, p_kind text) returns jsonb
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare oid bigint; sid int := _current_season(); t tournament;
 begin
   oid := _auth_owner(p_name, p_pin);
@@ -239,12 +241,12 @@ end $$;
 -- ---------- commissioner functions ----------
 
 create or replace function admin_check(p_pin text) returns boolean
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 begin return _auth_admin(p_pin); end $$;
 
 -- Swap on someone's behalf (e.g. they texted you). Ignores the lock so you can fix mistakes.
 create or replace function admin_set_swap(p_pin text, p_owner text, p_tournament int, p_flight text, p_kind text) returns jsonb
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare oid bigint; sid int := _current_season();
 begin
   if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
@@ -262,7 +264,7 @@ end $$;
 
 -- Replace all results for a tournament. p_rows: [{golfer, position, earnings}]
 create or replace function admin_set_results(p_pin text, p_tournament int, p_rows jsonb, p_final boolean default false) returns jsonb
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare sid int := _current_season(); n int;
 begin
   if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
@@ -278,7 +280,7 @@ begin
 end $$;
 
 create or replace function admin_set_alias(p_pin text, p_alias text, p_golfer text) returns jsonb
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 begin
   if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
   insert into golfer_alias(season_id, alias, golfer_name) values (_current_season(), p_alias, p_golfer)
@@ -287,7 +289,7 @@ begin
 end $$;
 
 create or replace function admin_upsert_owner(p_pin text, p_name text, p_new_pin text, p_email text default null, p_paid boolean default false) returns jsonb
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 begin
   if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
   insert into owner(season_id, name, email, pin_hash, paid)
@@ -300,7 +302,7 @@ begin
 end $$;
 
 create or replace function admin_set_roster_slot(p_pin text, p_owner text, p_flight text, p_starter text, p_alternate text) returns jsonb
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare oid bigint;
 begin
   if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
@@ -313,7 +315,7 @@ end $$;
 
 create or replace function admin_upsert_tournament(p_pin text, p_id int, p_name text, p_start date, p_lock_at timestamptz,
                                                    p_purse numeric default null, p_field_url text default null, p_espn_event_id text default null) returns jsonb
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 begin
   if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
   insert into tournament(season_id, id, name, start_date, lock_at, purse, field_url, espn_event_id)
@@ -339,7 +341,7 @@ grant execute on function admin_upsert_tournament(text, int, text, date, timesta
 
 -- ---------- one-time setup (edit, then run separately) ----------
 -- insert into season(id, name, is_current) values (2027, 'PGA Fantasy 2027', true);
--- insert into app_secret(key, value) values ('admin_pin_hash', crypt('CHOOSE-A-PIN', gen_salt('bf')));
+-- insert into app_secret(key, value) values ('admin_pin_hash', extensions.crypt('CHOOSE-A-PIN', extensions.gen_salt('bf')));
 
 -- ---------- season setup (added in the season-setup change; safe to re-run) ----------
 
