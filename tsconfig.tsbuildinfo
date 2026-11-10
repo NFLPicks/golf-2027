@@ -1,1 +1,0 @@
-{"root":["./src/App.tsx","./src/config.ts","./src/main.tsx","./src/storage.ts","./src/vite-env.d.ts","./src/lib/api.ts","./src/lib/league.ts","./src/lib/scoring.ts","./src/pages/Commissioner.tsx","./src/pages/MyTeam.tsx","./src/pages/Standings.tsx","./test/scoring.test.ts"],"version":"5.8.3"}

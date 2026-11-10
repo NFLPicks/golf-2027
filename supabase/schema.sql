@@ -342,3 +342,56 @@ grant execute on function admin_upsert_tournament(text, int, text, date, timesta
 -- ---------- one-time setup (edit, then run separately) ----------
 -- insert into season(id, name, is_current) values (2027, 'PGA Fantasy 2027', true);
 -- insert into app_secret(key, value) values ('admin_pin_hash', extensions.crypt('CHOOSE-A-PIN', extensions.gen_salt('bf')));
+
+-- ---------- season setup (added in the season-setup change; safe to re-run) ----------
+
+-- Replace the whole golfer pool. p_rows: [{name, flight}]
+create or replace function admin_set_golfers(p_pin text, p_rows jsonb) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+declare sid int := _current_season(); n int;
+begin
+  if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
+  delete from golfer where season_id = sid;
+  insert into golfer(season_id, name, flight)
+  select distinct on (trim(r->>'name')) sid, trim(r->>'name'), upper(trim(r->>'flight'))
+  from jsonb_array_elements(p_rows) r
+  where coalesce(trim(r->>'name'), '') <> '';
+  get diagnostics n = row_count;
+  return jsonb_build_object('ok', true, 'rows', n);
+end $$;
+
+-- Owners with their private details (email, paid), for the commissioner only.
+create or replace function admin_get_owners(p_pin text) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
+  return (select coalesce(jsonb_agg(jsonb_build_object('name', name, 'email', email, 'paid', paid) order by name), '[]')
+            from owner where season_id = _current_season());
+end $$;
+
+create or replace function admin_remove_owner(p_pin text, p_name text) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
+  delete from owner where season_id = _current_season() and lower(name) = lower(p_name);
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function admin_remove_tournament(p_pin text, p_id int) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+declare sid int := _current_season();
+begin
+  if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
+  if exists (select 1 from result where season_id = sid and tournament_id = p_id)
+     or exists (select 1 from swap where season_id = sid and tournament_id = p_id) then
+    return jsonb_build_object('error', 'That tournament already has results or swaps, so it can''t be removed.');
+  end if;
+  delete from tournament where season_id = sid and id = p_id;
+  return jsonb_build_object('ok', true);
+end $$;
+
+revoke all on function admin_set_golfers(text, jsonb), admin_get_owners(text), admin_remove_owner(text, text), admin_remove_tournament(text, int) from public;
+grant execute on function admin_set_golfers(text, jsonb) to anon;
+grant execute on function admin_get_owners(text) to anon;
+grant execute on function admin_remove_owner(text, text) to anon;
+grant execute on function admin_remove_tournament(text, int) to anon;
