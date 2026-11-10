@@ -101,3 +101,7 @@ export const adminUpsertTournament = (
     p_purse: t.purse, p_field_url: t.fieldUrl, p_espn_event_id: null,
   });
 export const adminRemoveTournament = (pin: string, id: number) => rpc('admin_remove_tournament', { p_pin: pin, p_id: id });
+export const adminSetResults = (pin: string, tournamentId: number, rows: { golfer: string; position: string | null; earnings: number | null }[], final: boolean) =>
+  rpc<{ rows: number }>('admin_set_results', { p_pin: pin, p_tournament: tournamentId, p_rows: rows, p_final: final });
+export const adminSetAlias = (pin: string, alias: string, golfer: string) =>
+  rpc('admin_set_alias', { p_pin: pin, p_alias: alias, p_golfer: golfer });
