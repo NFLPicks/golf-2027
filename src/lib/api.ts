@@ -8,8 +8,8 @@ async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T
   const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
     method: 'POST',
     headers: {
+      // New-style "sb_publishable_" keys go in the apikey header only (they aren't JWTs).
       apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(args),
