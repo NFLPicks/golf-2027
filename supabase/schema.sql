@@ -148,14 +148,15 @@ begin
   perform _check_throttle('owner:' || lower(p_name));
   select * into o from owner where season_id = _current_season() and lower(name) = lower(p_name);
   if not found or o.pin_hash <> crypt(p_pin, o.pin_hash) then
+    -- Don't raise here: raising would roll back the failure count.
     perform _note_failure('owner:' || lower(p_name));
-    raise exception 'Wrong name or PIN.';
+    return null;
   end if;
   delete from auth_throttle where who = 'owner:' || lower(p_name);
   return o.id;
 end $$;
 
-create or replace function _auth_admin(p_pin text) returns void
+create or replace function _auth_admin(p_pin text) returns boolean
 language plpgsql security definer set search_path = public as $$
 declare h text;
 begin
@@ -163,9 +164,10 @@ begin
   select value into h from app_secret where key = 'admin_pin_hash';
   if h is null or h <> crypt(p_pin, h) then
     perform _note_failure('admin');
-    raise exception 'Wrong commissioner PIN.';
+    return false;
   end if;
   delete from auth_throttle where who = 'admin';
+  return true;
 end $$;
 
 -- ---------- public reads (no PIN) ----------
@@ -199,6 +201,7 @@ language plpgsql security definer set search_path = public as $$
 declare oid bigint;
 begin
   oid := _auth_owner(p_name, p_pin);
+  if oid is null then return jsonb_build_object('error', 'Wrong name or PIN.'); end if;
   return jsonb_build_object('id', oid, 'name', (select name from owner where id = oid));
 end $$;
 
@@ -208,16 +211,18 @@ language plpgsql security definer set search_path = public as $$
 declare oid bigint;
 begin
   oid := _auth_owner(p_name, p_pin);
+  if oid is null then return jsonb_build_object('error', 'Wrong name or PIN.'); end if;
   return (select coalesce(jsonb_agg(jsonb_build_object('tournamentId', tournament_id, 'flight', flight, 'kind', kind, 'createdAt', created_at) order by tournament_id), '[]')
             from swap where owner_id = oid);
 end $$;
 
 -- Make or change a swap for the next tournament. p_kind null removes it.
-create or replace function set_my_swap(p_name text, p_pin text, p_tournament int, p_flight text, p_kind text) returns void
+create or replace function set_my_swap(p_name text, p_pin text, p_tournament int, p_flight text, p_kind text) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare oid bigint; sid int := _current_season(); t tournament;
 begin
   oid := _auth_owner(p_name, p_pin);
+  if oid is null then return jsonb_build_object('error', 'Wrong name or PIN.'); end if;
   select * into t from tournament where season_id = sid and id = p_tournament;
   if not found then raise exception 'Unknown tournament.'; end if;
   if now() >= t.lock_at then raise exception 'Swaps for % are locked (first tee time has passed).', t.name; end if;
@@ -228,20 +233,21 @@ begin
     values (oid, sid, p_tournament, p_flight, p_kind)
     on conflict (owner_id, tournament_id, flight) do update set kind = excluded.kind, created_at = now();
   end if;
+  return jsonb_build_object('ok', true);
 end $$;
 
 -- ---------- commissioner functions ----------
 
 create or replace function admin_check(p_pin text) returns boolean
 language plpgsql security definer set search_path = public as $$
-begin perform _auth_admin(p_pin); return true; end $$;
+begin return _auth_admin(p_pin); end $$;
 
 -- Swap on someone's behalf (e.g. they texted you). Ignores the lock so you can fix mistakes.
-create or replace function admin_set_swap(p_pin text, p_owner text, p_tournament int, p_flight text, p_kind text) returns void
+create or replace function admin_set_swap(p_pin text, p_owner text, p_tournament int, p_flight text, p_kind text) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare oid bigint; sid int := _current_season();
 begin
-  perform _auth_admin(p_pin);
+  if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
   select id into oid from owner where season_id = sid and lower(name) = lower(p_owner);
   if oid is null then raise exception 'Unknown owner %', p_owner; end if;
   if p_kind is null then
@@ -251,14 +257,15 @@ begin
     values (oid, sid, p_tournament, p_flight, p_kind, 'commissioner')
     on conflict (owner_id, tournament_id, flight) do update set kind = excluded.kind, created_at = now(), created_by = 'commissioner';
   end if;
+  return jsonb_build_object('ok', true);
 end $$;
 
 -- Replace all results for a tournament. p_rows: [{golfer, position, earnings}]
-create or replace function admin_set_results(p_pin text, p_tournament int, p_rows jsonb, p_final boolean default false) returns int
+create or replace function admin_set_results(p_pin text, p_tournament int, p_rows jsonb, p_final boolean default false) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare sid int := _current_season(); n int;
 begin
-  perform _auth_admin(p_pin);
+  if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
   delete from result where season_id = sid and tournament_id = p_tournament;
   insert into result(season_id, tournament_id, golfer_name, position, earnings)
   select distinct on (r->>'golfer') sid, p_tournament, r->>'golfer', r->>'position', nullif(r->>'earnings','')::numeric
@@ -267,49 +274,53 @@ begin
   get diagnostics n = row_count;
   update tournament set status = case when p_final then 'final' else 'in_progress' end
    where season_id = sid and id = p_tournament;
-  return n;
+  return jsonb_build_object('ok', true, 'rows', n);
 end $$;
 
-create or replace function admin_set_alias(p_pin text, p_alias text, p_golfer text) returns void
+create or replace function admin_set_alias(p_pin text, p_alias text, p_golfer text) returns jsonb
 language plpgsql security definer set search_path = public as $$
 begin
-  perform _auth_admin(p_pin);
+  if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
   insert into golfer_alias(season_id, alias, golfer_name) values (_current_season(), p_alias, p_golfer)
   on conflict (season_id, alias) do update set golfer_name = excluded.golfer_name;
+  return jsonb_build_object('ok', true);
 end $$;
 
-create or replace function admin_upsert_owner(p_pin text, p_name text, p_new_pin text, p_email text default null, p_paid boolean default false) returns void
+create or replace function admin_upsert_owner(p_pin text, p_name text, p_new_pin text, p_email text default null, p_paid boolean default false) returns jsonb
 language plpgsql security definer set search_path = public as $$
 begin
-  perform _auth_admin(p_pin);
+  if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
   insert into owner(season_id, name, email, pin_hash, paid)
   values (_current_season(), p_name, p_email, crypt(p_new_pin, gen_salt('bf')), p_paid)
   on conflict (season_id, name) do update set
     email = coalesce(excluded.email, owner.email),
     paid = excluded.paid,
     pin_hash = case when p_new_pin is null or p_new_pin = '' then owner.pin_hash else excluded.pin_hash end;
+  return jsonb_build_object('ok', true);
 end $$;
 
-create or replace function admin_set_roster_slot(p_pin text, p_owner text, p_flight text, p_starter text, p_alternate text) returns void
+create or replace function admin_set_roster_slot(p_pin text, p_owner text, p_flight text, p_starter text, p_alternate text) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare oid bigint;
 begin
-  perform _auth_admin(p_pin);
+  if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
   select id into oid from owner where season_id = _current_season() and lower(name) = lower(p_owner);
   if oid is null then raise exception 'Unknown owner %', p_owner; end if;
   insert into roster_slot(owner_id, flight, starter, alternate) values (oid, p_flight, p_starter, p_alternate)
   on conflict (owner_id, flight) do update set starter = excluded.starter, alternate = excluded.alternate;
+  return jsonb_build_object('ok', true);
 end $$;
 
 create or replace function admin_upsert_tournament(p_pin text, p_id int, p_name text, p_start date, p_lock_at timestamptz,
-                                                   p_purse numeric default null, p_field_url text default null, p_espn_event_id text default null) returns void
+                                                   p_purse numeric default null, p_field_url text default null, p_espn_event_id text default null) returns jsonb
 language plpgsql security definer set search_path = public as $$
 begin
-  perform _auth_admin(p_pin);
+  if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
   insert into tournament(season_id, id, name, start_date, lock_at, purse, field_url, espn_event_id)
   values (_current_season(), p_id, p_name, p_start, p_lock_at, p_purse, p_field_url, p_espn_event_id)
   on conflict (season_id, id) do update set name = excluded.name, start_date = excluded.start_date, lock_at = excluded.lock_at,
     purse = excluded.purse, field_url = excluded.field_url, espn_event_id = excluded.espn_event_id;
+  return jsonb_build_object('ok', true);
 end $$;
 
 -- Let the browser call only the functions, never the tables.
