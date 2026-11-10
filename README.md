@@ -19,5 +19,14 @@ App to run our fantasy golf league instead of the Excel sheet.
 
 ```
 npm install
-npm test
+npm test        # rules + 2026 replay
+npm run dev     # local app (needs VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)
 ```
+
+## App
+- **Standings**: season table, $ behind first, flight totals (gold = flight leader), weekly winners.
+- **My team**: owners sign in with name + PIN and pick, per flight, *Start* / *Swap this week* / *Swap permanently*
+  for any tournament that hasn't hit its first tee time. Other owners see swaps only after the lock.
+- **Commissioner**: PIN-protected; enter a swap for any owner (works after the lock to fix mistakes).
+
+Merging to `main` builds and deploys to GitHub Pages (https://nflpicks.github.io/golf-2027/).
