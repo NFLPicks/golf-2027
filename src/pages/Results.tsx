@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { adminSetAlias, adminSetResults, type League } from '../lib/api';
 import { money } from '../lib/league';
-import { espnEventId, espnLeaderboardUrl, parseEspnLeaderboard, type EspnResults } from '../lib/espnParse';
+import { espnEventId, espnLeaderboardUrl, parseEspnLeaderboard, sameEvent, type EspnResults } from '../lib/espnParse';
 import { nameCheck, parseLeaderboard, type ParsedResults } from '../lib/resultsParse';
 import { store } from '../storage';
 import { buildField, FLIGHTS, scoreTournament } from '../lib/scoring';
@@ -196,11 +196,3 @@ export default function Results({ pin, league, onChange }: Props) {
   );
 }
 
-/** Loose name match so "THE PLAYERS Championship" matches "The Players Championship" and sponsor tails don't matter. */
-function sameEvent(a: string, b: string) {
-  const words = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 3 && !['championship', 'classic', 'open', 'invitational', 'tournament', 'presented'].includes(w)));
-  const wa = words(a);
-  const wb = words(b);
-  if (!wa.size || !wb.size) return true;
-  return [...wa].some((w) => wb.has(w));
-}

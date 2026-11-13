@@ -55,3 +55,72 @@ export function parseEspnLeaderboard(json: any): EspnResults {
   else if (!paid) warnings.push('ESPN shows no prize money for this event yet.');
   return { eventId: String(event.id ?? ''), name: String(event.name ?? ''), final, purse, paid, rows, warnings };
 }
+
+// ---------- automatic Monday import ----------
+
+/** ESPN's PGA scoreboard; `dates` (YYYYMMDD) picks the week. Its calendar lists the season's events with IDs. */
+export const espnScoreboardUrl = (day?: string) =>
+  `https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard${day ? `?dates=${day.replace(/-/g, '')}` : ''}`;
+
+export interface EspnEvent { id: string; name: string; start: string; end: string }
+
+const day = (s: unknown) => (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : '');
+const idOf = (x: any): string => {
+  if (x?.id && /^\d+$/.test(String(x.id))) return String(x.id);
+  const m = String(x?.event?.$ref ?? x?.$ref ?? '').match(/events\/(\d+)/);
+  return m ? m[1] : '';
+};
+
+/** Every event ESPN lists in a scoreboard (calendar + events) or leaderboard response. */
+export function espnEvents(json: any): EspnEvent[] {
+  const out = new Map<string, EspnEvent>();
+  const add = (x: any, name: unknown, start: unknown, end: unknown) => {
+    const id = idOf(x);
+    const s = day(start);
+    if (id && s && !out.has(id)) out.set(id, { id, name: String(name ?? ''), start: s, end: day(end) || s });
+  };
+  for (const lg of json?.leagues ?? []) for (const c of lg?.calendar ?? []) add(c, c.label ?? c.name, c.startDate, c.endDate);
+  for (const e of json?.events ?? []) add(e, e.name ?? e.shortName, e.date ?? e.startDate, e.endDate);
+  return [...out.values()];
+}
+
+/** Loose event-name match: "THE PLAYERS Championship" = "The Players Championship"; sponsor words don't matter. */
+export function sameEvent(a: string, b: string) {
+  const skip = ['championship', 'classic', 'open', 'invitational', 'tournament', 'presented', 'pres'];
+  const words = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 3 && !skip.includes(w)));
+  const wa = words(a);
+  const wb = words(b);
+  if (!wa.size || !wb.size) return true;
+  return [...wa].some((w) => wb.has(w));
+}
+
+/**
+ * Which ESPN event is our tournament? It must overlap our dates (a day of slack either side).
+ * If several do (opposite-field weeks), the name decides. Null when unsure.
+ */
+export function matchEspnEvent(t: { name: string; start: string; end: string }, events: EspnEvent[]): EspnEvent | null {
+  const shift = (d: string, n: number) => new Date(Date.parse(d) + n * 86_400_000).toISOString().slice(0, 10);
+  const lo = shift(t.start, -1);
+  const hi = shift(t.end, 1);
+  const overlap = events.filter((e) => e.start <= hi && e.end >= lo);
+  const named = overlap.filter((e) => sameEvent(e.name, t.name));
+  if (named.length === 1) return named[0];
+  if (named.length === 0 && overlap.length === 1) return overlap[0];
+  return null;
+}
+
+/** Is this pull safe to save without a person looking? Returns the reason it isn't, or null. */
+export function autoSaveProblem(r: EspnResults, purse: number | null): string | null {
+  if (!r.final) return "ESPN doesn't show it as final yet.";
+  if (!r.paid) return 'ESPN shows no prize money yet.';
+  const p = purse ?? r.purse;
+  if (p && (r.paid < p * 0.85 || r.paid > p * 1.2)) return `Prize money read ($${Math.round(r.paid).toLocaleString('en-US')}) is far from the purse ($${p.toLocaleString('en-US')}).`;
+  return null;
+}
+
+/** Tournaments the Monday job should fetch: not final, finished (last day before today), and within the last 3 weeks. */
+export function dueForImport<T extends { status: string; start_date: string; end_date?: string | null }>(ts: T[], today: string): T[] {
+  const end = (t: T) => t.end_date ?? new Date(Date.parse(t.start_date) + 3 * 86_400_000).toISOString().slice(0, 10);
+  const oldest = new Date(Date.parse(today) - 21 * 86_400_000).toISOString().slice(0, 10);
+  return ts.filter((t) => t.status !== 'final' && end(t) < today && end(t) >= oldest);
+}

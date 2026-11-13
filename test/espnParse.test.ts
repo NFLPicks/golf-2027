@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { espnEventId, parseEspnLeaderboard } from '../src/lib/espnParse';
+import { autoSaveProblem, dueForImport, espnEventId, espnEvents, matchEspnEvent, parseEspnLeaderboard } from '../src/lib/espnParse';
 import { buildField } from '../src/lib/scoring';
 
 const load = (f: string) => JSON.parse(readFileSync(new URL(`./fixtures/${f}`, import.meta.url), 'utf8'));
@@ -46,5 +46,52 @@ describe('ESPN leaderboard import', () => {
     expect(espnEventId('https://www.espn.com/golf/leaderboard/_/tournamentId/401811937')).toBe('401811937');
     expect(espnEventId('https://www.espn.com/golf/leaderboard?tournamentId=401811937')).toBe('401811937');
     expect(espnEventId('players')).toBeNull();
+  });
+});
+
+describe('automatic import', () => {
+  const scoreboard = {
+    leagues: [{ calendar: [
+      { id: '401811937', label: 'THE PLAYERS Championship', startDate: '2027-03-11T07:00Z', endDate: '2027-03-14T07:00Z' },
+      { event: { $ref: 'http://sports.core.api.espn.com/v2/sports/golf/leagues/pga/events/401811938?lang=en' }, label: 'Valspar Championship', startDate: '2027-03-18T07:00Z', endDate: '2027-03-21T07:00Z' },
+      { id: '401811950', label: 'Puntacana Championship', startDate: '2027-03-18T07:00Z', endDate: '2027-03-21T07:00Z' },
+    ] }],
+    events: [{ id: '401811937', name: 'THE PLAYERS Championship', date: '2027-03-11T11:00Z', endDate: '2027-03-14T23:00Z' }],
+  };
+
+  it('lists ESPN events from the calendar and events, once each', () => {
+    const ev = espnEvents(scoreboard);
+    expect(ev.map((e) => e.id)).toEqual(['401811937', '401811938', '401811950']);
+    expect(ev[0]).toEqual({ id: '401811937', name: 'THE PLAYERS Championship', start: '2027-03-11', end: '2027-03-14' });
+    // A leaderboard response works too.
+    expect(espnEvents(load('espn-cut.json'))).toEqual([]); // trimmed fixture has no dates
+  });
+
+  it('matches by dates, and by name when two events share a week', () => {
+    const ev = espnEvents(scoreboard);
+    expect(matchEspnEvent({ name: 'The Players Championship', start: '2027-03-11', end: '2027-03-14' }, ev)?.id).toBe('401811937');
+    expect(matchEspnEvent({ name: 'Valspar Championship', start: '2027-03-18', end: '2027-03-21' }, ev)?.id).toBe('401811938');
+    expect(matchEspnEvent({ name: 'Some Other Open', start: '2027-03-18', end: '2027-03-21' }, ev)).toBeNull();
+    expect(matchEspnEvent({ name: 'Masters Tournament', start: '2027-04-08', end: '2027-04-11' }, ev)).toBeNull();
+    // Renamed sponsor but same dates and only one event that week: still matched.
+    expect(matchEspnEvent({ name: 'Cognizant Classic in The Palm Beaches', start: '2027-03-11', end: '2027-03-14' }, ev)?.id).toBe('401811937');
+  });
+
+  it('only auto-saves final results whose money is close to the purse', () => {
+    const r = parseEspnLeaderboard(load('espn-cut.json'));
+    expect(autoSaveProblem(r, 25_000_000)).toBeNull();
+    expect(autoSaveProblem(r, 9_900_000)).toMatch(/far from the purse/);
+    expect(autoSaveProblem({ ...r, final: false }, null)).toMatch(/final/);
+  });
+
+  it('picks finished, unscored events from the last three weeks', () => {
+    const ts = [
+      { id: 1, status: 'final', start_date: '2027-03-04' },
+      { id: 2, status: 'upcoming', start_date: '2027-03-11', end_date: '2027-03-14' },
+      { id: 3, status: 'upcoming', start_date: '2027-03-18' },
+      { id: 4, status: 'upcoming', start_date: '2027-01-07' },
+    ];
+    expect(dueForImport(ts, '2027-03-16').map((t) => t.id)).toEqual([2]);
+    expect(dueForImport(ts, '2027-03-22').map((t) => t.id)).toEqual([2, 3]);
   });
 });
