@@ -1,0 +1,30 @@
+name: Pull results from ESPN
+on:
+  schedule:
+    # Monday 9 AM ET (10 AM in summer), with a Tuesday retry for Monday finishes.
+    - cron: '0 14 * * 1'
+    - cron: '0 14 * * 2'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only report what it would save'
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: results
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vite-node scripts/pull-results.ts
+        env:
+          GOLF_ADMIN_PIN: ${{ secrets.GOLF_ADMIN_PIN }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '' }}

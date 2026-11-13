@@ -30,3 +30,9 @@ npm run dev     # local app (needs VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)
 - **Commissioner**: PIN-protected; enter a swap for any owner (works after the lock to fix mistakes).
 
 Merging to `main` builds and deploys to GitHub Pages (https://nflpicks.github.io/golf-2027/).
+
+## Automatic results (Mondays)
+
+`.github/workflows/results.yml` runs `scripts/pull-results.ts` Monday and Tuesday at 14:00 UTC. For each finished tournament without final results it finds the event on ESPN (by dates, then name), and saves the results only if ESPN says final and the prize money is within 85-120% of the purse. Anything else is listed in the run summary and the run fails, so GitHub emails the commissioner, who can use **Pull** on the Results screen instead.
+
+Setup: add the commissioner PIN as the repository secret `GOLF_ADMIN_PIN` (Settings > Secrets and variables > Actions). Actions > "Pull results from ESPN" > Run workflow does a dry run by default.
