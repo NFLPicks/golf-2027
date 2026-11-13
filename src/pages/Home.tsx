@@ -98,7 +98,7 @@ export default function Home({ league, session, onEdit }: { league: League; sess
         {roster && (locked ? (
           <span className="lockedtag"><LockIcon /> Locked</span>
         ) : (
-          <button className="bigbtn" style={{ padding: '0 16px', fontSize: 14 }} onClick={onEdit}><PencilIcon /> Edit lineup</button>
+          <button className="chipbtn solid" onClick={onEdit}><PencilIcon size={14} /> Edit lineup</button>
         ))}
       </div>
 
@@ -117,8 +117,8 @@ export default function Home({ league, session, onEdit }: { league: League; sess
             const m = cash.get(name) ?? { pga: 0, mine: 0 };
             return (
               <div className={`grow ${counts ? 'counts' : ''}`} key={role}>
-                <Headshot name={name} />
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <Headshot name={name} size={34} />
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
                   <div>
                     <span className="gname">{name}</span>
                     <span className="role">{role === 'starter' ? 'STARTER' : 'ALTERNATE'}</span>
@@ -129,7 +129,7 @@ export default function Home({ league, session, onEdit }: { league: League; sess
                   {inField === 'in' && <span className="badge in"><CheckIcon /> In Field</span>}
                   {inField === 'out' && <span className="badge out"><XIcon /> Not In Field</span>}
                   {inField === 'unknown' && <span className="badge wait">Field TBD</span>}
-                  {counts && <span className="pick">YOUR PICK THIS WEEK</span>}
+                  {counts && <span className="pick">YOUR PICK</span>}
                 </div>
               </div>
             );
