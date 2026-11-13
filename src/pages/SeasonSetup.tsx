@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   adminGetOwners,
+  adminReopenDraft,
+  adminSetPicksDeadline,
   adminRemoveOwner,
   adminRemoveTournament,
   adminSetGolfers,
@@ -45,6 +47,7 @@ export default function SeasonSetup(props: Props) {
     <>
       <Owners {...props} />
       <Golfers {...props} />
+      <TeamPicks {...props} />
       <Rosters {...props} />
       <Schedule {...props} />
     </>
@@ -106,6 +109,58 @@ function Owners({ pin, onChange }: Props) {
           </button>
         )}
       </form>
+      {view}
+    </div>
+  );
+}
+
+/** Build your team: the picks deadline (rosters go public then) and who has submitted. */
+function TeamPicks({ pin, league, onChange }: Props) {
+  const [owners, setOwners] = useState<AdminOwner[]>([]);
+  const toLocal = (iso?: string | null) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  };
+  const [deadline, setDeadline] = useState(toLocal(league.season?.picks_deadline));
+  const { run, view } = useStatus();
+  const load = async () => setOwners(await adminGetOwners(pin));
+  useEffect(() => { void load(); }, []); // eslint-disable-line
+  const submitted = owners.filter((o) => o.submittedAt).length;
+
+  return (
+    <div className="card">
+      <h2>Build your team ({submitted} of {owners.length} submitted)</h2>
+      <p className="muted small">
+        Owners pick 2 golfers per flight on Roster &amp; Picks and submit once. Nobody sees anyone else's team until the deadline, then all rosters show.
+        With no deadline set, a team shows as soon as it's submitted.
+      </p>
+      <div className="row">
+        <label className="small" style={{ flex: '1 1 200px' }}>
+          Picks deadline
+          <input type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)} style={{ display: 'block', width: '100%' }} />
+        </label>
+        <button className="btn" onClick={() => void run(async () => { await adminSetPicksDeadline(pin, deadline ? new Date(deadline).toISOString() : null); await onChange(); }, deadline ? 'Deadline saved.' : 'Deadline cleared.')}>
+          Save
+        </button>
+      </div>
+      <div style={{ marginTop: 8 }}>
+        {owners.map((o) => (
+          <div key={o.name} className="spread small" style={{ padding: '4px 0', borderBottom: '1px solid var(--line)' }}>
+            <span><b>{o.name}</b></span>
+            <span className="row" style={{ gap: 6 }}>
+              {o.submittedAt
+                ? <span className="ok">Submitted {new Date(o.submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                : <span className="muted">{o.drafted ? `Picking (${o.drafted} of 6 flights started)` : league.rosters.some((r) => r.owner === o.name) ? 'Entered by you' : 'Not started'}</span>}
+              {o.submittedAt && (
+                <button className="btn ghost" style={{ padding: '2px 8px' }} onClick={() => void run(async () => { await adminReopenDraft(pin, o.name); await load(); }, `${o.name} can change their team again.`)}>
+                  Reopen
+                </button>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
       {view}
     </div>
   );

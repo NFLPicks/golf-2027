@@ -6,6 +6,7 @@ import { money, openTournaments } from '../lib/league';
 import { changesFor, draftSwaps, savedChoices, type Choice, type Choices } from '../lib/picks';
 import { FLIGHT_LABELS, FLIGHTS, scoreSeason, type Flight } from '../lib/scoring';
 import GolferRow from '../components/GolferRow';
+import BuildTeam from './BuildTeam';
 
 const OPTIONS: { value: Choice; label: string }[] = [
   { value: 'keep', label: 'Keep' },
@@ -31,7 +32,7 @@ export default function RosterPicks({ league, name, pin }: { league: League; nam
         <h2>ROSTER &amp; PICKS</h2>
         {t ? (
           open.length > 1 ? (
-            <div className="row" style={{ gap: 6 }}>
+            <div className="row" style={{ gap: 6, width: '100%' }}>
               <select value={t.id} onChange={(e) => setTid(Number(e.target.value))} aria-label="Tournament" style={{ padding: '4px 8px' }}>
                 {open.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
@@ -79,7 +80,7 @@ function MyPicks({ league, name, pin, tid }: { league: League; name: string; pin
     return golferMoney(FLIGHTS.flatMap((f) => [roster.slots[f].starter, roster.slots[f].alternate]), name, league.results, season, league.aliases);
   }, [league, roster, name]);
 
-  if (!roster) return <div className="card muted">Your roster hasn't been entered yet.</div>;
+  if (!roster) return <BuildTeam league={league} name={name} pin={pin} onSubmitted={() => {}} />;
   if (tid === null) return <div className="card muted">Lineups are locked. You can make changes again once this week's tournament is over.</div>;
   if (!mySwaps || !draft) return <div className="card muted">{error || 'Loading…'}</div>;
 

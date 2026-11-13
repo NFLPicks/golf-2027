@@ -41,6 +41,17 @@ create table if not exists golfer (
   unique (season_id, name)
 );
 
+-- Build your team (preseason): picks deadline, private drafts, and when each owner submitted.
+alter table season add column if not exists picks_deadline timestamptz;
+alter table owner add column if not exists roster_submitted_at timestamptz;
+create table if not exists roster_draft (
+  owner_id    bigint not null references owner(id) on delete cascade,
+  flight      text not null check (flight in ('SUPER','A','B','C','D','E')),
+  starter     text,
+  alternate   text,
+  primary key (owner_id, flight)
+);
+
 -- Alternate spellings from results feeds, mapped to our golfer name.
 create table if not exists golfer_alias (
   season_id   int not null references season(id),
@@ -110,7 +121,7 @@ create table if not exists auth_throttle (
 do $$
 declare t text;
 begin
-  foreach t in array array['season','owner','golfer','golfer_alias','roster_slot','tournament','swap','result','app_secret','auth_throttle'] loop
+  foreach t in array array['season','owner','golfer','golfer_alias','roster_slot','roster_draft','tournament','swap','result','app_secret','auth_throttle'] loop
     execute format('alter table %I enable row level security', t);
     execute format('revoke all on %I from anon, authenticated', t);
   end loop;
@@ -185,7 +196,10 @@ language sql stable security definer set search_path = public, extensions as $$
     'golfers',     (select coalesce(jsonb_agg(jsonb_build_object('name', g.name, 'flight', g.flight) order by g.flight, g.name), '[]') from golfer g, s where g.season_id = s.id),
     'aliases',     (select coalesce(jsonb_object_agg(a.alias, a.golfer_name), '{}') from golfer_alias a, s where a.season_id = s.id),
     'rosters',     (select coalesce(jsonb_agg(jsonb_build_object('owner', o.name, 'flight', r.flight, 'starter', r.starter, 'alternate', r.alternate)), '[]')
-                      from roster_slot r join owner o on o.id = r.owner_id, s where o.season_id = s.id),
+                      from roster_slot r join owner o on o.id = r.owner_id, s
+                     where o.season_id = s.id
+                       -- Rosters stay private until the picks deadline (if one is set).
+                       and coalesce((select x.picks_deadline from season x where x.id = s.id), '-infinity') <= now()),
     'tournaments', (select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]') from tournament t, s where t.season_id = s.id),
     -- Swaps are only shown once the tournament has locked, so nobody sees moves before tee time.
     'swaps',       (select coalesce(jsonb_agg(jsonb_build_object('owner', o.name, 'tournamentId', w.tournament_id, 'flight', w.flight, 'kind', w.kind)), '[]')
@@ -365,8 +379,10 @@ create or replace function admin_get_owners(p_pin text) returns jsonb
 language plpgsql security definer set search_path = public, extensions as $$
 begin
   if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
-  return (select coalesce(jsonb_agg(jsonb_build_object('name', name, 'email', email, 'paid', paid) order by name), '[]')
-            from owner where season_id = _current_season());
+  return (select coalesce(jsonb_agg(jsonb_build_object('name', o.name, 'email', o.email, 'paid', o.paid,
+                    'submittedAt', o.roster_submitted_at,
+                    'drafted', (select count(*) from roster_draft d where d.owner_id = o.id)) order by o.name), '[]')
+            from owner o where o.season_id = _current_season());
 end $$;
 
 create or replace function admin_remove_owner(p_pin text, p_name text) returns jsonb
@@ -471,3 +487,87 @@ revoke all on function get_field(int), admin_set_field(text, int, jsonb), admin_
 grant execute on function get_field(int) to anon;
 grant execute on function admin_set_field(text, int, jsonb) to anon;
 grant execute on function admin_set_schedule(text, jsonb) to anon;
+
+-- ---------- build your team (preseason picks; safe to re-run) ----------
+
+-- My draft: picks so far, whether I've submitted, and the deadline.
+create or replace function get_my_draft(p_name text, p_pin text) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+declare oid bigint := _auth_owner(p_name, p_pin);
+begin
+  if oid is null then return jsonb_build_object('error', 'Wrong name or PIN.'); end if;
+  return jsonb_build_object(
+    'picks', (select coalesce(jsonb_agg(jsonb_build_object('flight', flight, 'starter', starter, 'alternate', alternate)), '[]') from roster_draft where owner_id = oid),
+    'submittedAt', (select roster_submitted_at from owner where id = oid),
+    'deadline', (select picks_deadline from season where id = _current_season()));
+end $$;
+
+-- Save one flight of my draft (either golfer may be empty while I'm still choosing).
+create or replace function save_my_draft(p_name text, p_pin text, p_flight text, p_starter text, p_alternate text) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+declare oid bigint := _auth_owner(p_name, p_pin); sid int := _current_season(); dl timestamptz;
+        st text := nullif(trim(p_starter), ''); al text := nullif(trim(p_alternate), '');
+begin
+  if oid is null then return jsonb_build_object('error', 'Wrong name or PIN.'); end if;
+  if (select roster_submitted_at from owner where id = oid) is not null then
+    return jsonb_build_object('error', 'Your team is already submitted. Ask the commissioner if you need a change.');
+  end if;
+  select picks_deadline into dl from season where id = sid;
+  if dl is not null and dl <= now() then return jsonb_build_object('error', 'The picks deadline has passed.'); end if;
+  if p_flight not in ('SUPER','A','B','C','D','E') then return jsonb_build_object('error', 'Unknown flight.'); end if;
+  if st is not null and st = al then return jsonb_build_object('error', 'Pick two different golfers.'); end if;
+  if exists (select 1 from golfer where season_id = sid) and exists (
+       select 1 from unnest(array[st, al]) g where g is not null
+          and not exists (select 1 from golfer where season_id = sid and name = g and flight = p_flight)) then
+    return jsonb_build_object('error', 'That golfer isn''t in this flight.');
+  end if;
+  insert into roster_draft(owner_id, flight, starter, alternate) values (oid, p_flight, st, al)
+  on conflict (owner_id, flight) do update set starter = excluded.starter, alternate = excluded.alternate;
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- Submit: all six flights need a starter and an alternate. Final for the season.
+create or replace function submit_my_draft(p_name text, p_pin text) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+declare oid bigint := _auth_owner(p_name, p_pin); dl timestamptz;
+begin
+  if oid is null then return jsonb_build_object('error', 'Wrong name or PIN.'); end if;
+  if (select roster_submitted_at from owner where id = oid) is not null then return jsonb_build_object('error', 'Already submitted.'); end if;
+  select picks_deadline into dl from season where id = _current_season();
+  if dl is not null and dl <= now() then return jsonb_build_object('error', 'The picks deadline has passed.'); end if;
+  if (select count(*) from roster_draft where owner_id = oid and starter is not null and alternate is not null) < 6 then
+    return jsonb_build_object('error', 'Pick a starter and an alternate in every flight first.');
+  end if;
+  insert into roster_slot(owner_id, flight, starter, alternate)
+  select owner_id, flight, starter, alternate from roster_draft where owner_id = oid
+  on conflict (owner_id, flight) do update set starter = excluded.starter, alternate = excluded.alternate;
+  update owner set roster_submitted_at = now() where id = oid;
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- Commissioner: set (or clear) the picks deadline; rosters become public at that moment.
+create or replace function admin_set_picks_deadline(p_pin text, p_deadline timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
+  update season set picks_deadline = p_deadline where id = _current_season();
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- Commissioner: let an owner change a submitted team (their draft is kept).
+create or replace function admin_reopen_draft(p_pin text, p_owner text) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
+  update owner set roster_submitted_at = null where season_id = _current_season() and lower(name) = lower(p_owner);
+  if not found then return jsonb_build_object('error', 'Unknown owner.'); end if;
+  return jsonb_build_object('ok', true);
+end $$;
+
+revoke all on function get_my_draft(text, text), save_my_draft(text, text, text, text, text), submit_my_draft(text, text),
+  admin_set_picks_deadline(text, timestamptz), admin_reopen_draft(text, text) from public;
+grant execute on function get_my_draft(text, text) to anon;
+grant execute on function save_my_draft(text, text, text, text, text) to anon;
+grant execute on function submit_my_draft(text, text) to anon;
+grant execute on function admin_set_picks_deadline(text, timestamptz) to anon;
+grant execute on function admin_reopen_draft(text, text) to anon;

@@ -202,3 +202,7 @@ tr.me td { background: var(--brand-soft); }
 .cal-row .what b { display: block; }
 .profile-head { display: flex; align-items: center; gap: 14px; }
 .profile-head .avatar { width: 64px; height: 64px; font-size: 24px; align-items: center; background: #2d6a45; }
+
+/* Build your team: a golfer you can tap in a flight list */
+button.pickrow { width: 100%; border: 0; border-top: 1px solid var(--line); background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+button.pickrow[aria-pressed="true"] { background: var(--brand-soft); font-weight: 700; }
