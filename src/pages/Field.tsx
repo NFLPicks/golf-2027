@@ -53,8 +53,8 @@ export default function Field({ pin, league, onChange }: Props) {
           {posted === null ? 'Checking…' : posted.length ? <>Field posted: <b>{posted.length}</b> golfers. Pasting again replaces it.</> : 'No field posted yet. Owners see "Field not posted yet" until you add it.'}
         </p>
         <p className="muted small">
-          Copy the field (or the Round 1 tee times) from ESPN or the PGA Tour and paste it here. One name per line works too.
-          Re-paste any time before the lock if someone withdraws.
+          The field posts itself from ESPN every morning Monday to Thursday (and Tue/Wed evenings), picking up withdrawals.
+          To post it yourself, copy the field (or the Round 1 tee times) from ESPN or the PGA Tour and paste it here. One name per line works too.
         </p>
         <textarea
           rows={8}

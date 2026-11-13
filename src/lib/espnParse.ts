@@ -124,3 +124,33 @@ export function dueForImport<T extends { status: string; start_date: string; end
   const oldest = new Date(Date.parse(today) - 21 * 86_400_000).toISOString().slice(0, 10);
   return ts.filter((t) => t.status !== 'final' && end(t) < today && end(t) >= oldest);
 }
+
+// ---------- weekly field ----------
+
+/**
+ * The field from an ESPN leaderboard posted before the event: every listed golfer,
+ * minus anyone ESPN already marks withdrawn or disqualified.
+ */
+export function espnFieldNames(json: any): string[] {
+  const competitors: any[] = json?.events?.[0]?.competitions?.[0]?.competitors;
+  if (!Array.isArray(competitors)) throw new Error("That doesn't look like an ESPN leaderboard.");
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const c of competitors) {
+    const name = String(c?.athlete?.displayName ?? '').trim();
+    const status = String(c?.status?.type?.name ?? '');
+    if (!name || seen.has(name) || /WD|WITHDRAW|DQ|DISQUAL/i.test(status)) continue;
+    seen.add(name);
+    out.push(name);
+  }
+  return out;
+}
+
+/** Tournaments whose field the daily job should post: not final and starting within the next 6 days (or today). */
+export function dueForField<T extends { status: string; start_date: string }>(ts: T[], today: string): T[] {
+  const until = new Date(Date.parse(today) + 6 * 86_400_000).toISOString().slice(0, 10);
+  return ts.filter((t) => t.status !== 'final' && t.start_date >= today && t.start_date <= until);
+}
+
+/** A real PGA Tour field has well over 30 players; fewer means ESPN hasn't posted it yet. */
+export const MIN_FIELD = 30;

@@ -1,0 +1,30 @@
+name: Pull weekly field from ESPN
+on:
+  schedule:
+    # Every morning Mon-Thu around 7 AM ET, plus Tue/Wed evenings for late withdrawals.
+    - cron: '0 12 * * 1-4'
+    - cron: '0 23 * * 2,3'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only report what it would post'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: field
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vite-node scripts/pull-field.ts
+        env:
+          GOLF_ADMIN_PIN: ${{ secrets.GOLF_ADMIN_PIN }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '' }}
