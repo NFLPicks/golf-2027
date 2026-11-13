@@ -141,3 +141,24 @@ describe('2026 season replay', () => {
     expect(season.tournaments).toHaveLength(34);
   });
 });
+
+describe('tie-break: highest-earning golfer', () => {
+  it('breaks a weekly tie by the bigger single golfer', () => {
+    const r1: Roster = { owner: 'Pat', slots: slots('Star', 'Alt') };
+    const r2: Roster = { owner: 'Lee', slots: slots('Star', 'Alt') };
+    // Pat: 60 + 40 = 100 (best 60). Lee: 70 + 30 = 100 (best 70) -> Lee wins.
+    r1.slots.SUPER = { starter: 'P1', alternate: 'x1' };
+    r1.slots.A = { starter: 'P2', alternate: 'x2' };
+    r2.slots.SUPER = { starter: 'L1', alternate: 'y1' };
+    r2.slots.A = { starter: 'L2', alternate: 'y2' };
+    const field = buildField([
+      { golfer: 'P1', earnings: 60 }, { golfer: 'P2', earnings: 40 },
+      { golfer: 'L1', earnings: 70 }, { golfer: 'L2', earnings: 30 },
+    ]);
+    expect(scoreTournament(1, [r1, r2], [], field).winners).toEqual(['Lee']);
+    const s = scoreSeason({ rosters: [r1, r2], swaps: [], results: { 1: [
+      { golfer: 'P1', earnings: 60 }, { golfer: 'P2', earnings: 40 }, { golfer: 'L1', earnings: 70 }, { golfer: 'L2', earnings: 30 },
+    ] } });
+    expect(s.standings.map((r) => [r.owner, r.rank])).toEqual([['Lee', 1], ['Pat', 2]]);
+  });
+});

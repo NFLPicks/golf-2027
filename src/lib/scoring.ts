@@ -142,6 +142,8 @@ export interface StandingRow {
   behindFirst: number;
   byFlight: Record<Flight, number>;
   weeklyWins: number;
+  /** Season money of this owner's highest-earning golfer (only weeks he counted). Used to break ties. */
+  bestGolfer: number;
 }
 
 export interface SeasonResult {
@@ -201,8 +203,27 @@ export function scoreTournament(
     return { owner: r.owner, picks, total: picks.reduce((s, p) => s + p.earnings, 0) };
   });
   const topTotal = Math.max(0, ...scores.map((s) => s.total));
-  const winners = topTotal > 0 ? scores.filter((s) => nearlyEqual(s.total, topTotal)).map((s) => s.owner) : [];
+  let tied = topTotal > 0 ? scores.filter((s) => nearlyEqual(s.total, topTotal)) : [];
+  // Tie-break (league rule): the owner whose highest-earning golfer that week earned more wins.
+  if (tied.length > 1) {
+    const best = (s: OwnerTournamentScore) => Math.max(0, ...s.picks.map((p) => p.earnings));
+    const top = Math.max(...tied.map(best));
+    tied = tied.filter((s) => nearlyEqual(best(s), top));
+  }
+  const winners = tied.map((s) => s.owner);
   return { tournamentId, scores, winners, topTotal };
+}
+
+/** The most any one golfer has earned for an owner this season (optionally within one flight). */
+function bestGolferOf(tournaments: TournamentScore[], owner: string, flight?: Flight): number {
+  const byGolfer = new Map<string, number>();
+  for (const t of tournaments) {
+    for (const p of t.scores.find((s) => s.owner === owner)?.picks ?? []) {
+      if (!p.counted || (flight && p.flight !== flight)) continue;
+      byGolfer.set(p.counted, (byGolfer.get(p.counted) ?? 0) + p.earnings);
+    }
+  }
+  return Math.max(0, ...byGolfer.values());
 }
 
 function nearlyEqual(a: number, b: number) {
@@ -232,20 +253,27 @@ export function scoreSeason(input: {
       if (t.winners.includes(r.owner)) weeklyWins++;
     }
     const total = FLIGHTS.reduce((s, f) => s + byFlight[f], 0);
-    return { owner: r.owner, total, byFlight, weeklyWins };
+    return { owner: r.owner, total, byFlight, weeklyWins, bestGolfer: bestGolferOf(tournaments, r.owner) };
   });
-  rows.sort((a, b) => b.total - a.total || a.owner.localeCompare(b.owner));
+  // Tie-break (league rule): the owner whose highest-earning golfer (season money that counted for them) earned more.
+  rows.sort((a, b) => b.total - a.total || b.bestGolfer - a.bestGolfer || a.owner.localeCompare(b.owner));
   const top = rows[0]?.total ?? 0;
   const standings: StandingRow[] = rows.map((r) => ({
     ...r,
-    rank: rows.findIndex((x) => nearlyEqual(x.total, r.total)) + 1,
+    rank: rows.findIndex((x) => nearlyEqual(x.total, r.total) && nearlyEqual(x.bestGolfer, r.bestGolfer)) + 1,
     behindFirst: r.total - top,
   }));
 
   const flightLeaders = {} as SeasonResult['flightLeaders'];
   for (const f of FLIGHTS) {
     const total = Math.max(...rows.map((r) => r.byFlight[f]));
-    flightLeaders[f] = { total, owners: rows.filter((r) => nearlyEqual(r.byFlight[f], total)).map((r) => r.owner) };
+    let owners = rows.filter((r) => nearlyEqual(r.byFlight[f], total)).map((r) => r.owner);
+    if (owners.length > 1) {
+      const best = new Map(owners.map((o) => [o, bestGolferOf(tournaments, o, f)]));
+      const topBest = Math.max(...best.values());
+      owners = owners.filter((o) => nearlyEqual(best.get(o)!, topBest));
+    }
+    flightLeaders[f] = { total, owners };
   }
 
   return { tournaments, standings, flightLeaders };
