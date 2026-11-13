@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { autoSaveProblem, dueForImport, espnEventId, espnEvents, matchEspnEvent, parseEspnLeaderboard } from '../src/lib/espnParse';
+import { autoSaveProblem, dueForField, dueForImport, espnFieldNames, espnEventId, espnEvents, matchEspnEvent, parseEspnLeaderboard } from '../src/lib/espnParse';
 import { buildField } from '../src/lib/scoring';
 
 const load = (f: string) => JSON.parse(readFileSync(new URL(`./fixtures/${f}`, import.meta.url), 'utf8'));
@@ -93,5 +93,30 @@ describe('automatic import', () => {
     ];
     expect(dueForImport(ts, '2027-03-16').map((t) => t.id)).toEqual([2]);
     expect(dueForImport(ts, '2027-03-22').map((t) => t.id)).toEqual([2, 3]);
+  });
+});
+
+describe('weekly field', () => {
+  it('lists the field, leaving out withdrawals', () => {
+    const j = load('espn-nocut.json');
+    const c = j.events[0].competitions[0].competitors;
+    c[1].status.type.name = 'STATUS_WD';
+    c.push({ ...c[0] }); // duplicate
+    const names = espnFieldNames(j);
+    expect(names).toHaveLength(71);
+    expect(names).not.toContain(c[1].athlete.displayName);
+    expect(names[0]).toBe(c[0].athlete.displayName);
+  });
+
+  it('picks events starting today through the next 6 days', () => {
+    const ts = [
+      { id: 1, status: 'upcoming', start_date: '2027-01-15' },
+      { id: 2, status: 'upcoming', start_date: '2027-01-21' },
+      { id: 3, status: 'upcoming', start_date: '2027-01-28' },
+      { id: 4, status: 'final', start_date: '2027-01-21' },
+    ];
+    expect(dueForField(ts, '2027-01-18').map((t) => t.id)).toEqual([2]);
+    expect(dueForField(ts, '2027-01-21').map((t) => t.id)).toEqual([2]);
+    expect(dueForField(ts, '2027-01-22').map((t) => t.id)).toEqual([3]);
   });
 });

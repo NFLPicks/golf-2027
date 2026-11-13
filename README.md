@@ -36,3 +36,7 @@ Merging to `main` builds and deploys to GitHub Pages (https://nflpicks.github.io
 `.github/workflows/results.yml` runs `scripts/pull-results.ts` Monday and Tuesday at 14:00 UTC. For each finished tournament without final results it finds the event on ESPN (by dates, then name), and saves the results only if ESPN says final and the prize money is within 85-120% of the purse. Anything else is listed in the run summary and the run fails, so GitHub emails the commissioner, who can use **Pull** on the Results screen instead.
 
 Setup: add the commissioner PIN as the repository secret `GOLF_ADMIN_PIN` (Settings > Secrets and variables > Actions). Actions > "Pull results from ESPN" > Run workflow does a dry run by default.
+
+## Automatic weekly field
+
+`.github/workflows/field.yml` runs `scripts/pull-field.ts` Mon-Thu at 12:00 UTC and Tue/Wed at 23:00 UTC. For each tournament starting in the next 6 days that has not locked, it finds the event on ESPN and posts its field (minus anyone marked WD/DQ), so Home and Roster & Picks show In field / Not in field. ESPN not having the field yet (fewer than 30 names) is skipped quietly. Uses the same `GOLF_ADMIN_PIN` secret. Scoring never depends on the field: results decide who played.
