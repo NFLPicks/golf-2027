@@ -4,8 +4,9 @@ import { weekStatus, type WeekFlight } from '../lib/fieldStatus';
 import { currentTournament, dateRange, golferMoney, timeLeft } from '../lib/home';
 import { isLocked, money } from '../lib/league';
 import { FLIGHT_LABELS, FLIGHTS, scoreSeason } from '../lib/scoring';
-import { CheckIcon, ClockIcon, ExternalIcon, LockIcon, PencilIcon, XIcon } from '../components/Icons';
-import { EventLogo, Headshot } from '../components/Images';
+import { ClockIcon, ExternalIcon, LockIcon, PencilIcon } from '../components/Icons';
+import { EventLogo } from '../components/Images';
+import GolferRow from '../components/GolferRow';
 import type { Session } from './Login';
 
 const TAGS: Record<WeekFlight['summary'], string> = {
@@ -112,27 +113,9 @@ export default function Home({ league, session, onEdit }: { league: League; sess
               {f.weekSwap && f.summary !== 'none' ? 'SWAPPED THIS WEEK' : TAGS[f.summary]}
             </span>
           </div>
-          {([['starter', f.starter, f.starterIn], ['alternate', f.alternate, f.alternateIn]] as const).map(([role, name, inField]) => {
-            const counts = f.counts === name;
+          {([['STARTER', f.starter, f.starterIn], ['ALTERNATE', f.alternate, f.alternateIn]] as const).map(([role, name, inField]) => {
             const m = cash.get(name) ?? { pga: 0, mine: 0 };
-            return (
-              <div className={`grow ${counts ? 'counts' : ''}`} key={role}>
-                <Headshot name={name} size={34} />
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  <div>
-                    <span className="gname">{name}</span>
-                    <span className="role">{role === 'starter' ? 'STARTER' : 'ALTERNATE'}</span>
-                  </div>
-                  <span className="money">PGA {money(m.pga)} · For you <b>{money(m.mine)}</b></span>
-                </div>
-                <div className="badges">
-                  {inField === 'in' && <span className="badge in"><CheckIcon /> In Field</span>}
-                  {inField === 'out' && <span className="badge out"><XIcon /> Not In Field</span>}
-                  {inField === 'unknown' && <span className="badge wait">Field TBD</span>}
-                  {counts && <span className="pick">YOUR PICK</span>}
-                </div>
-              </div>
-            );
+            return <GolferRow key={role} name={name} role={role} inField={inField} counts={f.counts === name} pga={m.pga} mine={m.mine} />;
           })}
         </section>
       ))}

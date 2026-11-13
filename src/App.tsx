@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getLeague, isConfigured, ownerLogin, type League } from './lib/api';
 import Standings from './pages/Standings';
-import MyTeam from './pages/MyTeam';
+import RosterPicks from './pages/RosterPicks';
 import Home from './pages/Home';
 import Calendar from './pages/Calendar';
 import Profile from './pages/Profile';
@@ -94,7 +94,7 @@ export default function App() {
         {error && <div className="card error">Couldn't refresh: {error}</div>}
         {tab === 'home' && <Home league={league} session={session} onEdit={() => setTab('picks')} />}
         {tab === 'picks' && (session.kind === 'owner'
-          ? <MyTeam league={league} name={session.name} pin={session.pin} />
+          ? <RosterPicks league={league} name={session.name} pin={session.pin} />
           : <div className="card muted">You're signed in as the commissioner. Sign in as an owner to see and change a lineup.</div>)}
         {tab === 'standings' && <Standings league={league} />}
         {tab === 'calendar' && <Calendar league={league} />}
