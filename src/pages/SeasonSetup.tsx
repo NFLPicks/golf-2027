@@ -6,10 +6,12 @@ import {
   adminSetGolfers,
   adminSetRosterSlot,
   adminUpsertOwner,
-  adminUpsertTournament,
+  adminSetSchedule,
   type AdminOwner,
   type League,
 } from '../lib/api';
+import { eventLogoUrl } from '../lib/images';
+import { parseSchedule, SCHEDULE_TEMPLATE } from '../lib/scheduleParse';
 import { golferListText, parseGolferList } from '../lib/golferList';
 import { formatLock, money } from '../lib/league';
 import { FLIGHTS, FLIGHT_LABELS, type Flight } from '../lib/scoring';
@@ -219,8 +221,79 @@ const toLocalInput = (iso: string) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-function Schedule({ pin, league, onChange }: Props) {
-  const empty = { id: '', name: '', start: '', lock: '', purse: '', fieldUrl: '' };
+function Schedule(props: Props) {
+  return (
+    <>
+      <PasteSchedule {...props} />
+      <ScheduleTable {...props} />
+    </>
+  );
+}
+
+/** Paste the whole season from a spreadsheet: preview, then save in one go (all or nothing). */
+function PasteSchedule({ pin, league, onChange }: Props) {
+  const [text, setText] = useState('');
+  const { run, view } = useStatus();
+  const firstId = Math.max(0, ...league.tournaments.map((t) => t.id)) + 1;
+  const parsed = useMemo(() => parseSchedule(text, { firstId, year: 2027 }), [text, firstId]);
+  const existing = new Set(league.tournaments.map((t) => t.id));
+
+  return (
+    <div className="card">
+      <h2>Paste the season schedule</h2>
+      <p className="muted small">
+        Fill in a spreadsheet with these column names in the first row, then copy and paste the whole thing here. Only Event and
+        Start are required. Add a "#" column to update events you already entered, and a "Lock" column (first tee time, Eastern) if
+        it isn't 7:00 AM.
+      </p>
+      <div className="row">
+        <span className="small"><b>Columns:</b> {SCHEDULE_TEMPLATE.split('\t').join(' · ')}</span>
+        <button className="btn ghost" type="button" onClick={() => void navigator.clipboard?.writeText(SCHEDULE_TEMPLATE)}>Copy column names</button>
+      </div>
+      <textarea
+        rows={6}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={SCHEDULE_TEMPLATE + '\nWM Phoenix Open\t2/4/2027\t2/7/2027\tTPC Scottsdale\tScottsdale, AZ\t$9,800,000\tThomas Detry'}
+        style={{ width: '100%', marginTop: 8, font: 'inherit', fontSize: 13, padding: 10, borderRadius: 8, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--text)' }}
+      />
+      {parsed.warnings.map((w) => <div key={w} className="error small">{w}</div>)}
+      {parsed.rows.length > 0 && (
+        <>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th className="l">Event</th><th className="l">Dates</th><th className="l">Swaps lock</th><th className="l">Course</th><th>Purse</th><th className="l">Champion</th></tr></thead>
+              <tbody>
+                {parsed.rows.map((r) => (
+                  <tr key={r.id}>
+                    <td>{r.id}{existing.has(r.id) && <span className="muted small"> (update)</span>}</td>
+                    <td className="l">{r.name}</td>
+                    <td className="l">{r.start}{r.end ? ` to ${r.end}` : ''}</td>
+                    <td className="l">{formatLock(r.lockAt)}</td>
+                    <td className="l">{[r.course, r.location].filter(Boolean).join(', ')}</td>
+                    <td>{r.purse ? money(r.purse) : ''}</td>
+                    <td className="l">{r.champion ?? ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button
+            className="btn"
+            style={{ marginTop: 8 }}
+            onClick={() => void run(async () => { await adminSetSchedule(pin, parsed.rows); await onChange(); setText(''); }, `Saved ${parsed.rows.length} events.`)}
+          >
+            Save {parsed.rows.length} events
+          </button>
+        </>
+      )}
+      {view}
+    </div>
+  );
+}
+
+function ScheduleTable({ pin, league, onChange }: Props) {
+  const empty = { id: '', name: '', start: '', end: '', lock: '', purse: '', course: '', location: '', champion: '', logo: '', fieldUrl: '' };
   const [f, setF] = useState(empty);
   const { run, view } = useStatus();
   const ts = [...league.tournaments].sort((a, b) => a.id - b.id);
@@ -228,7 +301,11 @@ function Schedule({ pin, league, onChange }: Props) {
 
   const edit = (id: number) => {
     const t = ts.find((x) => x.id === id)!;
-    setF({ id: String(t.id), name: t.name, start: t.start_date, lock: toLocalInput(t.lock_at), purse: t.purse ? String(t.purse) : '', fieldUrl: t.field_url ?? '' });
+    setF({
+      id: String(t.id), name: t.name, start: t.start_date, end: t.end_date ?? '', lock: toLocalInput(t.lock_at),
+      purse: t.purse ? String(t.purse) : '', course: t.course ?? '', location: t.location ?? '',
+      champion: t.defending_champion ?? '', logo: t.logo ?? '', fieldUrl: t.field_url ?? '',
+    });
   };
   const set = (k: keyof typeof empty) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value;
@@ -242,13 +319,24 @@ function Schedule({ pin, league, onChange }: Props) {
       {ts.length > 0 && (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>#</th><th className="l">Tournament</th><th className="l">Swaps lock</th><th>Purse</th><th /></tr></thead>
+            <thead><tr><th>#</th><th /><th className="l">Tournament</th><th className="l">Swaps lock</th><th className="l">Course</th><th>Purse</th><th /></tr></thead>
             <tbody>
               {ts.map((t) => (
                 <tr key={t.id}>
                   <td>{t.id}</td>
+                  <td>
+                    <img
+                      src={eventLogoUrl(t)}
+                      alt=""
+                      width={28}
+                      height={28}
+                      style={{ objectFit: 'contain' }}
+                      onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
+                    />
+                  </td>
                   <td className="l">{t.name}</td>
                   <td className="l">{formatLock(t.lock_at)}</td>
+                  <td className="l">{t.course ?? ''}</td>
                   <td>{t.purse ? money(Number(t.purse)) : ''}</td>
                   <td><button className="btn ghost" onClick={() => edit(t.id)}>Edit</button></td>
                 </tr>
@@ -258,17 +346,21 @@ function Schedule({ pin, league, onChange }: Props) {
         </div>
       )}
       <p className="muted small">
-        Two tournaments in the same week get separate numbers. "Swaps lock" is the first tee time on Thursday, in your time zone.
+        Add or fix one event at a time here. Two tournaments in the same week get separate numbers. "Swaps lock" is the first tee
+        time on Thursday, in your time zone. Logos come from the images folder by event name; fill in "Logo file" only if the file
+        is named differently.
       </p>
       <form
         className="row"
         onSubmit={(e) => {
           e.preventDefault();
           void run(async () => {
-            await adminUpsertTournament(pin, {
-              id: Number(f.id || nextId), name: f.name.trim(), start: f.start, lockAt: new Date(f.lock).toISOString(),
-              purse: f.purse ? Number(f.purse.replace(/[$,]/g, '')) : null, fieldUrl: f.fieldUrl.trim() || null,
-            });
+            await adminSetSchedule(pin, [{
+              id: Number(f.id || nextId), name: f.name.trim(), start: f.start, end: f.end || null,
+              lockAt: new Date(f.lock).toISOString(), purse: f.purse ? Number(f.purse.replace(/[$,]/g, '')) : null,
+              course: f.course.trim() || null, location: f.location.trim() || null, champion: f.champion.trim() || null,
+              logo: f.logo.trim() || null, fieldUrl: f.fieldUrl.trim() || null,
+            }]);
             await onChange();
             setF(empty);
           }, `Saved ${f.name}.`);
@@ -277,8 +369,13 @@ function Schedule({ pin, league, onChange }: Props) {
         <input style={{ width: 70 }} placeholder={`# ${nextId}`} inputMode="numeric" value={f.id} onChange={set('id')} aria-label="Number" />
         <input placeholder="Tournament name" value={f.name} onChange={set('name')} />
         <label className="small muted">Starts <input type="date" value={f.start} onChange={set('start')} /></label>
+        <label className="small muted">Ends <input type="date" value={f.end} onChange={set('end')} /></label>
         <label className="small muted">Swaps lock <input type="datetime-local" value={f.lock} onChange={set('lock')} /></label>
         <input placeholder="Purse ($)" inputMode="numeric" value={f.purse} onChange={set('purse')} />
+        <input placeholder="Course" value={f.course} onChange={set('course')} />
+        <input placeholder="Location" value={f.location} onChange={set('location')} />
+        <input placeholder="Last year's champion" value={f.champion} onChange={set('champion')} />
+        <input placeholder="Logo file (optional)" value={f.logo} onChange={set('logo')} />
         <input placeholder="Field link (optional)" value={f.fieldUrl} onChange={set('fieldUrl')} />
         <button className="btn" disabled={!f.name.trim() || !f.start || !f.lock}>Save tournament</button>
         {f.id && ts.some((t) => String(t.id) === f.id) && (
