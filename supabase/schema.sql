@@ -395,3 +395,79 @@ grant execute on function admin_set_golfers(text, jsonb) to anon;
 grant execute on function admin_get_owners(text) to anon;
 grant execute on function admin_remove_owner(text, text) to anon;
 grant execute on function admin_remove_tournament(text, int) to anon;
+
+-- ---------- event details and weekly field (added in the event-data change; safe to re-run) ----------
+
+alter table tournament add column if not exists end_date date;
+alter table tournament add column if not exists course text;
+alter table tournament add column if not exists location text;
+alter table tournament add column if not exists defending_champion text;
+-- File name of the event's logo in Storage (images/events/<logo>). Null = use the name-based default.
+alter table tournament add column if not exists logo text;
+
+-- Who is playing each tournament. Posted by the commissioner (or pulled automatically later).
+-- Empty for a tournament = the field isn't posted yet.
+create table if not exists tournament_field (
+  season_id     int not null,
+  tournament_id int not null,
+  golfer_name   text not null,
+  foreign key (season_id, tournament_id) references tournament(season_id, id) on delete cascade,
+  primary key (season_id, tournament_id, golfer_name)
+);
+alter table tournament_field enable row level security;
+revoke all on tournament_field from anon, authenticated;
+
+-- The field for one tournament (public, like standings). [] = not posted yet.
+create or replace function get_field(p_tournament int) returns jsonb
+language sql stable security definer set search_path = public, extensions as $$
+  select coalesce(jsonb_agg(golfer_name order by golfer_name), '[]')
+  from tournament_field where season_id = _current_season() and tournament_id = p_tournament
+$$;
+
+-- Replace the field for a tournament. p_names: ["Scottie Scheffler", ...]
+create or replace function admin_set_field(p_pin text, p_tournament int, p_names jsonb) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+declare sid int := _current_season(); n int;
+begin
+  if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
+  if not exists (select 1 from tournament where season_id = sid and id = p_tournament) then
+    return jsonb_build_object('error', 'Unknown tournament.');
+  end if;
+  delete from tournament_field where season_id = sid and tournament_id = p_tournament;
+  insert into tournament_field(season_id, tournament_id, golfer_name)
+  select distinct sid, p_tournament, trim(x) from jsonb_array_elements_text(p_names) x where trim(x) <> '';
+  get diagnostics n = row_count;
+  return jsonb_build_object('ok', true, 'rows', n);
+end $$;
+
+-- Add or update tournaments in bulk (the season schedule, or one edited row).
+-- p_rows: [{id, name, start, end, lockAt, purse, course, location, champion, logo, fieldUrl}]
+create or replace function admin_set_schedule(p_pin text, p_rows jsonb) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+declare sid int := _current_season(); r jsonb; n int := 0;
+begin
+  if not _auth_admin(p_pin) then return jsonb_build_object('error', 'Wrong commissioner PIN.'); end if;
+  for r in select * from jsonb_array_elements(p_rows) loop
+    if coalesce(trim(r->>'name'), '') = '' or (r->>'id') is null or (r->>'start') is null or (r->>'lockAt') is null then
+      -- Raise (not return) so nothing from this batch is half-saved.
+      raise exception 'Each tournament needs a number, name, start date and lock time.';
+    end if;
+    insert into tournament(season_id, id, name, start_date, end_date, lock_at, purse, course, location, defending_champion, logo, field_url)
+    values (sid, (r->>'id')::int, trim(r->>'name'), (r->>'start')::date, nullif(r->>'end', '')::date, (r->>'lockAt')::timestamptz,
+            nullif(r->>'purse', '')::numeric, nullif(trim(r->>'course'), ''), nullif(trim(r->>'location'), ''),
+            nullif(trim(r->>'champion'), ''), nullif(trim(r->>'logo'), ''), nullif(trim(r->>'fieldUrl'), ''))
+    on conflict (season_id, id) do update set
+      name = excluded.name, start_date = excluded.start_date, end_date = excluded.end_date, lock_at = excluded.lock_at,
+      purse = excluded.purse, course = excluded.course, location = excluded.location,
+      defending_champion = excluded.defending_champion, logo = excluded.logo,
+      -- A pasted schedule has no field link; keep the saved one unless the row sends fieldUrl.
+      field_url = case when r ? 'fieldUrl' then excluded.field_url else tournament.field_url end;
+    n := n + 1;
+  end loop;
+  return jsonb_build_object('ok', true, 'rows', n);
+end $$;
+
+revoke all on function get_field(int), admin_set_field(text, int, jsonb), admin_set_schedule(text, jsonb) from public;
+grant execute on function get_field(int) to anon;
+grant execute on function admin_set_field(text, int, jsonb) to anon;
+grant execute on function admin_set_schedule(text, jsonb) to anon;

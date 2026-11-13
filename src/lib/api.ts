@@ -1,6 +1,7 @@
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../config';
 import type { Flight, ResultRow, Roster, Swap, SwapKind, Tournament } from './scoring';
 import { FLIGHTS } from './scoring';
+import type { ScheduleRow } from './scheduleParse';
 
 export const isConfigured = () => Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
@@ -26,6 +27,12 @@ export interface LeagueTournament extends Tournament {
   purse: number | null;
   field_url: string | null;
   status: 'upcoming' | 'in_progress' | 'final';
+  end_date?: string | null;
+  course?: string | null;
+  location?: string | null;
+  defending_champion?: string | null;
+  /** Logo file name in Storage (images/events); null = name-based default. */
+  logo?: string | null;
 }
 
 export interface League {
@@ -105,3 +112,11 @@ export const adminSetResults = (pin: string, tournamentId: number, rows: { golfe
   rpc<{ rows: number }>('admin_set_results', { p_pin: pin, p_tournament: tournamentId, p_rows: rows, p_final: final });
 export const adminSetAlias = (pin: string, alias: string, golfer: string) =>
   rpc('admin_set_alias', { p_pin: pin, p_alias: alias, p_golfer: golfer });
+
+// ---- event details and weekly field ----
+/** The posted field for a tournament ([] = not posted yet). */
+export const getField = (tournamentId: number) => rpc<string[]>('get_field', { p_tournament: tournamentId });
+export const adminSetField = (pin: string, tournamentId: number, names: string[]) =>
+  rpc<{ rows: number }>('admin_set_field', { p_pin: pin, p_tournament: tournamentId, p_names: names });
+export const adminSetSchedule = (pin: string, rows: (ScheduleRow & { fieldUrl?: string | null })[]) =>
+  rpc<{ rows: number }>('admin_set_schedule', { p_pin: pin, p_rows: rows });
