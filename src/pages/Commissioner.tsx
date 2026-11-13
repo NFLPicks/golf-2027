@@ -69,7 +69,7 @@ export default function Commissioner({ league, onChange, initialPin }: { league:
           <option value="">Owner…</option>
           {league.owners.map((o) => <option key={o.id}>{o.name}</option>)}
         </select>
-        <select value={tid} onChange={(e) => setTid(e.target.value ? Number(e.target.value) : '')}>
+        <select className="wide" value={tid} onChange={(e) => setTid(e.target.value ? Number(e.target.value) : '')}>
           <option value="">Tournament…</option>
           {league.tournaments.map((t) => <option key={t.id} value={t.id}>{t.id}. {t.name}</option>)}
         </select>

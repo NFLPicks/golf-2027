@@ -82,10 +82,7 @@ export default function App() {
     <div className="shell">
       <div className="appbar">
         <header className="appbar-inner">
-          <div>
-            <span className="t1">PGA FANTASY</span>
-            <span className="t2">{league.season?.name ?? '2027 Fantasy'}</span>
-          </div>
+          <span className="t1">{(league.season?.name ?? 'PGA Fantasy 2027').toUpperCase()}</span>
           <button onClick={signOut}>LOG OUT</button>
         </header>
         <StatLine league={league} session={session} />
@@ -119,14 +116,18 @@ function StatLine({ league, session }: { league: League; session: Session }) {
     () => scoreSeason({ rosters: league.rosters, swaps: league.swaps, results: league.results, aliases: league.aliases }),
     [league],
   );
-  if (session.kind !== 'owner') return <div className="statline"><span style={{ fontWeight: 600 }}>Commissioner</span></div>;
-  const row = season.standings.find((r) => r.owner === session.name);
-  if (!row) return <div className="statline"><span style={{ fontWeight: 600 }}>{session.name}</span></div>;
+  const who = session.kind === 'owner' ? session.name.split(' ')[0] : 'Commissioner';
+  const row = session.kind === 'owner' ? season.standings.find((r) => r.owner === session.name) : undefined;
+  const played = Object.keys(league.results).length > 0;
   return (
     <div className="statline">
-      <span style={{ fontWeight: 600 }}>#{row.rank} of {season.standings.length}</span>
-      <span>Season Earnings: <b>{money(row.total)}</b></span>
-      <span>{row.weeklyWins} Weekly Win{row.weeklyWins === 1 ? '' : 's'}</span>
+      <span>Welcome back, <b>{who}</b></span>
+      {row && played && (
+        <span className="muted">
+          <b style={{ color: 'var(--text)' }}>#{row.rank}</b> of {season.standings.length} · <b style={{ color: 'var(--text)' }}>{money(row.total)}</b>
+          {row.weeklyWins ? ` · ${row.weeklyWins} win${row.weeklyWins === 1 ? '' : 's'}` : ''}
+        </span>
+      )}
     </div>
   );
 }
