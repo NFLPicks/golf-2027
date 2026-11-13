@@ -69,6 +69,11 @@ input, select, button.btn {
   font: inherit; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line);
   background: var(--card); color: var(--text);
 }
+/* Long option text (tournament names) must not push a select past the screen edge. */
+select, input { max-width: 100%; min-width: 0; }
+select { text-overflow: ellipsis; }
+.row > select { flex: 1 1 140px; }
+.row > select.wide { flex-basis: 100%; }
 button.btn { background: var(--brand); color: #fff; border-color: var(--brand); font-weight: 600; cursor: pointer; }
 @media (prefers-color-scheme: dark) { button.btn { color: #0f1411; } }
 button.btn.ghost { background: transparent; color: var(--brand); }
@@ -96,15 +101,14 @@ tr.me td { background: var(--brand-soft); }
 
 /* ---------- 2027 redesign: shell ---------- */
 .shell { max-width: 640px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
-.appbar { background: var(--card); padding: 8px 12px 0; }
+.appbar { background: var(--card); padding: 6px 12px 0; }
 .appbar-inner {
-  display: flex; align-items: center; justify-content: space-between; padding: 6px 14px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 6px 0 14px; border-radius: 10px;
   background: #2d6a45; color: #fff;
 }
-.appbar-inner .t1 { font-size: 17px; font-weight: 600; letter-spacing: .5px; display: block; }
-.appbar-inner .t2 { font-size: 12px; opacity: .9; }
-.appbar-inner button { min-height: 44px; border: 0; background: transparent; color: #fff; font: inherit; font-weight: 500; letter-spacing: .5px; cursor: pointer; }
-.statline { display: flex; justify-content: space-between; gap: 8px; padding: 8px 4px; font-size: 12px; flex-wrap: wrap; }
+.appbar-inner .t1 { font-size: 15px; font-weight: 700; letter-spacing: .5px; }
+.appbar-inner button { min-height: 40px; padding: 0 8px; font-size: 13px; border: 0; background: transparent; color: #fff; font: inherit; font-weight: 500; letter-spacing: .5px; cursor: pointer; }
+.statline { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 6px 4px; font-size: 13px; flex-wrap: wrap; }
 .shell main { flex: 1; width: 100%; padding: 10px 12px 80px; display: flex; flex-direction: column; gap: 10px; max-width: none; }
 .shell main > .card { margin-bottom: 0; }
 .bottomnav {
@@ -155,7 +159,7 @@ tr.me td { background: var(--brand-soft); }
 .bigbtn.outline { background: transparent; color: var(--brand); }
 @media (prefers-color-scheme: dark) { .bigbtn { color: #0f1411; } .bigbtn.outline { color: var(--brand); } }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 2px 2px 0; }
-.section-head h2 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -.5px; }
+.section-head h2 { margin: 0; font-size: 15px; font-weight: 800; letter-spacing: .3px; }
 .lockedtag { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 10px; font-size: 13px !important; border-radius: 10px; background: var(--line); color: var(--muted); font-weight: 700; font-size: 14px; }
 .fcard { background: var(--card); border-radius: 10px; overflow: hidden; }
 .fhead { display: flex; align-items: center; justify-content: space-between; padding: 5px 10px; background: #2d6a45; color: #fff; }
