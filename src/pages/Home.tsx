@@ -104,7 +104,14 @@ export default function Home({ league, session, onEdit }: { league: League; sess
       </div>
 
       {!owner && <div className="card muted">You're signed in as the commissioner. Sign in as an owner to see a lineup.</div>}
-      {owner && !roster && <div className="card muted">Your roster hasn't been entered yet. The commissioner will set it up before the season.</div>}
+      {owner && !roster && (
+        <div className="card" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ flex: 1 }} className="small">
+            {league.golfers.length ? <>Pick 2 golfers in each flight to build your team{league.season?.picks_deadline ? <> by <b>{new Date(league.season.picks_deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</b></> : null}. Already submitted? Rosters show up here once picks close.</> : "Team picks open once the commissioner loads this season's golfers."}
+          </span>
+          {league.golfers.length > 0 && <button className="chipbtn solid" onClick={onEdit}>Build your team</button>}
+        </div>
+      )}
       {flights.map((f) => (
         <section className="fcard" key={f.flight} aria-label={`${FLIGHT_LABELS[f.flight]} flight`}>
           <div className="fhead">

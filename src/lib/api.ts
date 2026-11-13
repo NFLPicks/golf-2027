@@ -36,7 +36,7 @@ export interface LeagueTournament extends Tournament {
 }
 
 export interface League {
-  season: { id: number; name: string; entry_fee: number; weekly_prize: number } | null;
+  season: { id: number; name: string; entry_fee: number; weekly_prize: number; picks_deadline?: string | null } | null;
   owners: { id: number; name: string }[];
   golfers: { name: string; flight: Flight }[];
   aliases: Record<string, string>;
@@ -90,7 +90,7 @@ export const adminSetSwap = (pin: string, owner: string, tournamentId: number, f
   rpc('admin_set_swap', { p_pin: pin, p_owner: owner, p_tournament: tournamentId, p_flight: flight, p_kind: kind });
 
 // ---- season setup (commissioner) ----
-export interface AdminOwner { name: string; email: string | null; paid: boolean }
+export interface AdminOwner { name: string; email: string | null; paid: boolean; submittedAt?: string | null; drafted?: number }
 export const adminGetOwners = (pin: string) => rpc<AdminOwner[]>('admin_get_owners', { p_pin: pin });
 export const adminUpsertOwner = (pin: string, name: string, newPin: string, email: string | null, paid: boolean) =>
   rpc('admin_upsert_owner', { p_pin: pin, p_name: name, p_new_pin: newPin, p_email: email, p_paid: paid });
@@ -120,3 +120,14 @@ export const adminSetField = (pin: string, tournamentId: number, names: string[]
   rpc<{ rows: number }>('admin_set_field', { p_pin: pin, p_tournament: tournamentId, p_names: names });
 export const adminSetSchedule = (pin: string, rows: (ScheduleRow & { fieldUrl?: string | null })[]) =>
   rpc<{ rows: number }>('admin_set_schedule', { p_pin: pin, p_rows: rows });
+
+// ---- build your team (preseason picks) ----
+export interface DraftPick { flight: Flight; starter: string | null; alternate: string | null }
+export interface MyDraft { picks: DraftPick[]; submittedAt: string | null; deadline: string | null }
+export const getMyDraft = (name: string, pin: string) => rpc<MyDraft>('get_my_draft', { p_name: name, p_pin: pin });
+export const saveMyDraft = (name: string, pin: string, flight: Flight, starter: string | null, alternate: string | null) =>
+  rpc('save_my_draft', { p_name: name, p_pin: pin, p_flight: flight, p_starter: starter, p_alternate: alternate });
+export const submitMyDraft = (name: string, pin: string) => rpc('submit_my_draft', { p_name: name, p_pin: pin });
+export const adminSetPicksDeadline = (pin: string, deadline: string | null) =>
+  rpc('admin_set_picks_deadline', { p_pin: pin, p_deadline: deadline });
+export const adminReopenDraft = (pin: string, owner: string) => rpc('admin_reopen_draft', { p_pin: pin, p_owner: owner });
