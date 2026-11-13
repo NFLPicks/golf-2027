@@ -106,3 +106,16 @@ describe('schedule parsing', () => {
     expect(parseSchedule('WM Phoenix Open\t2/4/2027').warnings[0]).toMatch(/column names/);
   });
 });
+
+describe('event logo fallbacks', () => {
+  it('drops sponsor tails so the short file name still matches', async () => {
+    const { withoutSponsor, eventLogoUrls } = await import('../src/lib/images');
+    expect(withoutSponsor('Arnold Palmer Invitational pres. by Mastercard')).toBe('Arnold Palmer Invitational');
+    expect(withoutSponsor('the Memorial Tournament presented by Workday')).toBe('the Memorial Tournament');
+    expect(withoutSponsor('WM Phoenix Open')).toBe('WM Phoenix Open');
+    const urls = eventLogoUrls({ name: 'Arnold Palmer Invitational pres. by Mastercard', logo: 'api.png' });
+    expect(urls.map((u) => u.split('/events/')[1])).toEqual([
+      'api.png', 'arnold-palmer-invitational-pres-by-mastercard.png', 'arnold-palmer-invitational.png',
+    ]);
+  });
+});

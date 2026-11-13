@@ -10,7 +10,7 @@ import {
   type AdminOwner,
   type League,
 } from '../lib/api';
-import { eventLogoUrl } from '../lib/images';
+import { EventLogo } from '../components/Images';
 import { parseSchedule, SCHEDULE_TEMPLATE } from '../lib/scheduleParse';
 import { golferListText, parseGolferList } from '../lib/golferList';
 import { formatLock, money } from '../lib/league';
@@ -325,14 +325,7 @@ function ScheduleTable({ pin, league, onChange }: Props) {
                 <tr key={t.id}>
                   <td>{t.id}</td>
                   <td>
-                    <img
-                      src={eventLogoUrl(t)}
-                      alt=""
-                      width={28}
-                      height={28}
-                      style={{ objectFit: 'contain' }}
-                      onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
-                    />
+                    <EventLogo t={t} size={28} />
                   </td>
                   <td className="l">{t.name}</td>
                   <td className="l">{formatLock(t.lock_at)}</td>
