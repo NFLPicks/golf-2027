@@ -61,42 +61,34 @@ export default function Home({ league, session, onEdit }: { league: League; sess
   return (
     <>
       <section className="event" aria-label="This week">
-        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div className="event-top">
+          <EventLogo t={t} />
+          <div style={{ flex: 1, minWidth: 0 }}>
             <span className="kicker">EVENT {t.id} · {dateRange(t)}</span>
             <h1 className="display">{t.name.toUpperCase()}</h1>
             {(t.course || t.location) && <span className="where">{[t.course, t.location].filter(Boolean).join(' · ')}</span>}
           </div>
-          <EventLogo t={t} />
         </div>
         {(t.purse || t.defending_champion) && (
           <div className="facts">
-            <div>
-              <span className="small">PURSE:</span>
-              <span className="display big">{t.purse ? money(Number(t.purse)) : 'TBD'}</span>
-            </div>
-            <div>
-              <span className="small">Last Year’s Champion</span>
-              <span className="champ">{t.defending_champion ?? '—'}</span>
-            </div>
+            {t.purse ? <span>Purse <b className="display">{money(Number(t.purse))}</b></span> : null}
+            {t.defending_champion && <span>Defending <b>{t.defending_champion}</b></span>}
           </div>
         )}
-        {locked ? (
-          <div className="lockline locked"><LockIcon /><span>Locked · {t.status === 'final' ? 'Final results are in' : 'Round 1 underway'}</span></div>
-        ) : (
-          <div className="lockline"><ClockIcon /><span>Lineups lock {lockText} ET · {timeLeft(t.lock_at, now)}</span></div>
-        )}
-        <div className="twobtn">
-          {field && field.length > 0 ? (
-            <button className="bigbtn outline" aria-expanded={showField} onClick={() => setShowField((v) => !v)}>
-              {showField ? 'Hide the Field' : 'View the Field'}
-            </button>
-          ) : t.field_url ? (
-            <a className="bigbtn outline" href={t.field_url} target="_blank" rel="noreferrer">View the Field</a>
+        <div className="event-foot">
+          {locked ? (
+            <span className="lockline locked"><LockIcon size={14} />{t.status === 'final' ? 'Final' : 'Locked · Round 1 underway'}</span>
           ) : (
-            <span className="bigbtn outline" style={{ opacity: 0.6, fontSize: 13 }}>Field not posted yet</span>
+            <span className="lockline"><ClockIcon size={14} />Locks {lockText} ET · {timeLeft(t.lock_at, now)}</span>
           )}
-          <a className="bigbtn" href="https://www.pgatour.com/leaderboard" target="_blank" rel="noreferrer">PGA TOUR <ExternalIcon /></a>
+          <div className="event-links">
+            {field && field.length > 0 ? (
+              <button className="chipbtn" aria-expanded={showField} onClick={() => setShowField((v) => !v)}>{showField ? 'Hide field' : 'Field'}</button>
+            ) : t.field_url ? (
+              <a className="chipbtn" href={t.field_url} target="_blank" rel="noreferrer">Field</a>
+            ) : null}
+            <a className="chipbtn solid" href="https://www.pgatour.com/leaderboard" target="_blank" rel="noreferrer">PGA TOUR <ExternalIcon size={13} /></a>
+          </div>
         </div>
         {showField && field && <p className="small muted" style={{ margin: 0 }}>{field.length} golfers: {field.join(', ')}</p>}
       </section>
