@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getMySwaps, ownerLogin, setMySwap, type League, type MySwap } from '../lib/api';
+import { getMySwaps, setMySwap, type League, type MySwap } from '../lib/api';
 import { formatLock, openTournaments, planFor } from '../lib/league';
 import { FLIGHT_LABELS, type Flight, type SwapKind } from '../lib/scoring';
-import { store } from '../storage';
 
-export default function MyTeam({ league }: { league: League }) {
-  const [name, setName] = useState(() => store.get('owner') ?? '');
-  const [pin, setPin] = useState(() => store.get('pin') ?? '');
-  const [loggedIn, setLoggedIn] = useState(false);
+/** Roster & Picks: the signed-in owner's lineup with swaps for open tournaments. */
+export default function MyTeam({ league, name, pin }: { league: League; name: string; pin: string }) {
   const [mySwaps, setMySwaps] = useState<MySwap[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -17,54 +14,10 @@ export default function MyTeam({ league }: { league: League }) {
   const load = useCallback(async (n: string, p: string) => {
     setMySwaps(await getMySwaps(n, p));
   }, []);
-
-  const login = async (n = name, p = pin) => {
-    setError('');
-    setBusy(true);
-    try {
-      const o = await ownerLogin(n, p);
-      store.set('owner', o.name);
-      store.set('pin', p);
-      setName(o.name);
-      await load(o.name, p);
-      setLoggedIn(true);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // Log back in automatically on return visits.
-  useEffect(() => {
-    if (name && pin) void login(name, pin);
-  }, []);
-
-  const logout = () => {
-    store.set('pin', null);
-    setPin('');
-    setLoggedIn(false);
-  };
-
-  if (!loggedIn) {
-    return (
-      <div className="card">
-        <h2>Sign in</h2>
-        <form className="row" onSubmit={(e) => { e.preventDefault(); void login(); }}>
-          <select value={name} onChange={(e) => setName(e.target.value)} aria-label="Your name">
-            <option value="">Your name…</option>
-            {league.owners.map((o) => <option key={o.id}>{o.name}</option>)}
-          </select>
-          <input type="password" inputMode="numeric" placeholder="PIN" value={pin} onChange={(e) => setPin(e.target.value)} aria-label="PIN" />
-          <button className="btn" disabled={!name || !pin || busy}>Sign in</button>
-        </form>
-        {error && <div className="error">{error}</div>}
-      </div>
-    );
-  }
+  useEffect(() => { load(name, pin).catch((e) => setError((e as Error).message)); }, [name, pin, load]);
 
   const roster = league.rosters.find((r) => r.owner === name);
-  if (!roster) return <div className="card">Your roster hasn't been entered yet. <button className="btn ghost" onClick={logout}>Sign out</button></div>;
+  if (!roster) return <div className="card muted">Your roster hasn't been entered yet.</div>;
 
   const t = league.tournaments.find((x) => x.id === tid) ?? open[0];
   const swaps = mySwaps.map((s) => ({ ...s, owner: name }));
@@ -85,13 +38,7 @@ export default function MyTeam({ league }: { league: League }) {
 
   return (
     <>
-      <div className="card">
-        <div className="spread">
-          <h2 style={{ margin: 0 }}>{name}</h2>
-          <button className="btn ghost" onClick={logout}>Sign out</button>
-        </div>
-      </div>
-
+      <div className="section-head"><h2>ROSTER &amp; PICKS</h2></div>
       {!t ? (
         <div className="card muted">No upcoming tournaments are open for swaps right now.</div>
       ) : (

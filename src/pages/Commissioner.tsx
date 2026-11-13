@@ -5,10 +5,10 @@ import SeasonSetup from './SeasonSetup';
 import Results from './Results';
 import Field from './Field';
 
-export default function Commissioner({ league, onChange }: { league: League; onChange: () => Promise<void> | void }) {
+export default function Commissioner({ league, onChange, initialPin }: { league: League; onChange: () => Promise<void> | void; initialPin?: string }) {
   // The commissioner PIN is kept in memory only, never saved in the browser.
-  const [pin, setPin] = useState('');
-  const [ok, setOk] = useState(false);
+  const [pin, setPin] = useState(initialPin ?? '');
+  const [ok, setOk] = useState(Boolean(initialPin));
   const [error, setError] = useState('');
   const [msg, setMsg] = useState('');
   const [owner, setOwner] = useState('');
